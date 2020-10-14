@@ -1,0 +1,41 @@
+{
+  "name": "wifi-configurator",
+  "version": "1.0.0",
+  "description": "A wifi configuration module for linux using SD card, USB devices and bluetooth",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha --reporter spec"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/csymapp/wifi-configurator.git"
+  },
+  "keywords": [
+    "wifi",
+    "bluetooth",
+    "configurator",
+    "raspberrypi"
+  ],
+  "author": "Brian Onang'o",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/csymapp/wifi-configurator/issues"
+  },
+  "homepage": "https://github.com/csymapp/wifi-configurator#readme",
+  "dependencies": {
+    "await-to-js": "^2.1.1",
+    "axios": "^0.20.0",
+    "check-internet-connected": "^2.0.5",
+    "drivelist": "^9.1.0",
+    "node-etc": "^1.0.4",
+    "node-watch": "^0.7.0",
+    "node-wifi": "^2.0.14",
+    "node-wifi-fixes": "^2.0.20",
+    "shelljs": "^0.8.4",
+    "tea-merge": "^0.1.0",
+    "usb-detection": "^4.10.0"
+  },
+  "devDependencies": {
+    "mocha": "^8.1.3"
+  }
+}
