@@ -1,7 +1,9 @@
-const wifi = require('../index')
+var wifi = require('../index')(false)
 
 it("Should emit event", () => {
     wifi.once('wifi', (msg) => {
-        process.exit();
+        wifi = {};
+        return true
+        // process.exit();
     })
 })

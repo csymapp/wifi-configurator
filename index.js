@@ -16,7 +16,7 @@ class wifiConfigurator extends EventEmitter {
      * Read configuration from mounted devices and save to config file
      * Check if connected to wifi. If not, scan available networks and try to connect using available credentials
      */
-    constructor() {
+    constructor(init = true) {
         super()
         this.netStatus = true;
         this.wifiStatus = true;
@@ -32,7 +32,13 @@ class wifiConfigurator extends EventEmitter {
         wifi.init({
             iface
         });
+        if (init) {
+            this.init();
+        }
 
+    }
+
+    init() {
         etc.createConfig(savedConfigFileName);
         this.watchDrives()
         this.on('wifi', (msg) => this.wifiStatusProcess(msg))
@@ -371,4 +377,4 @@ class wifiConfigurator extends EventEmitter {
     }
 }
 
-module.exports = new wifiConfigurator();
+module.exports = (init) => { return new wifiConfigurator(init); }

@@ -3,7 +3,7 @@ wifi-Configurator for Nodejs
 
 A wifi configuration module for linux using SD card, USB devices and (web bluetooth - not yet implemented).
 
-[![Build Status](https://travis-ci.com/csymapp/node-etc.svg?branch=master)](https://travis-ci.com/csymapp/node-etc)
+[![Build Status](https://travis-ci.com/csymapp/wifi-configurator.svg?branch=main)](https://travis-ci.com/csymapp/wifi-configurator)
 
 This is a NodeJS module to configure WiFi on a linux system including Raspberry Pi SD card, USB devices and ( Bluetooth Low Energy and Web Bluetooth - not yet implemented). It has been designed as part of the [csynage media kit](https://csynage.com)
 
