@@ -1,6 +1,6 @@
 {
   "name": "wifi-configurator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A wifi configuration module for linux using SD card, USB devices and bluetooth",
   "main": "index.js",
   "scripts": {

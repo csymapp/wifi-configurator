@@ -1,7 +1,8 @@
 const os = require('os');
 const EventEmitter = require('events').EventEmitter;
 const watch = require('node-watch');
-const shell = require('shelljs');
+// const shell = require('shelljs');
+const child_process = require('child_process');
 const path = require('path');
 const etc = require('node-etc')
 const wifi = require('node-wifi');
@@ -171,7 +172,8 @@ class wifiConfigurator extends EventEmitter {
      * @returns [string] - array of locations where all mounted disks are mounted
      */
     getUsb() {
-        let usbJson = JSON.parse(shell.exec('lsblk --json', { silent: true }).stdout);
+        // let usbJson = JSON.parse(shell.exec('lsblk --json', { silent: true }).stdout);
+        let usbJson = JSON.parse(child_process.execSync('lsblk --json').toString());
         let dev = usbJson.blockdevices;
         let devices = [];
         dev.forEach(function (entry) {
