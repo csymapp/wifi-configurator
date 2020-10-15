@@ -556,14 +556,4 @@ class wifiConfigurator extends EventEmitter {
     }
 }
 
-let test = new wifiConfigurator();
-console.log(test.listSavedNetworks())
-console.log(test.removeSavedNetwork({ SSID: 'GS', 'password': 'rekindlingreformation34' }))
-console.log(test.listSavedNetworks())
-console.log(test.saveNetworkifNotExists({ SSID: 'GS', 'password': 'rekindlingreformation34' }))
-console.log(test.listSavedNetworks())
-console.log(test.editNetwork({ SSID: 'GS', 'password': 'rekindlingreformation34' }, { SSID: 'GS', 'password': 'rekindlingreformation35' }))
-console.log(test.listSavedNetworks())
-test.connectToSpecificNetwork({ SSID: 'GS', password: 'rekindlingreformation' })
-test.pauseInternetChecks()
 module.exports = (init) => { return new wifiConfigurator(init); }
