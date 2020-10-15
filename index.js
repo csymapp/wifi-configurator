@@ -156,9 +156,9 @@ class wifiConfigurator extends EventEmitter {
                         this.noInternetCounts = 0;
                         this.netStatus = false
                         this.firstInternetCheck = false
-                        if (this.wifiStatus) {
+                        // if (this.wifiStatus) {
                             this.emit('internet', 'disconnected')
-                        }
+                        // }
                     } else {
                         console.log(this.noInternetCounts)
                         this.noInternetCounts++
@@ -326,6 +326,7 @@ class wifiConfigurator extends EventEmitter {
         }
         if (selectedNetwork) {
             console.log(selectedNetwork.ssid)
+            this.emit('wifi', `Connecting to selected ${Network.ssid}`)
         }
         if (!selectedNetwork) {
             if (Object.keys(allNetworks).length > 0) {
