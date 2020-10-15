@@ -106,6 +106,7 @@ class wifiConfigurator extends EventEmitter {
      * save default network credentials
      */
     saveDefaults() {
+        etc.createConfig(savedConfigFileName);
         let defaultSSID = 'wifi-configurator'
         let defaultPassword = 'wifi-config'
         this.saveNetworkifNotExists({

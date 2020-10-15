@@ -4,6 +4,7 @@ wifi-Configurator for Nodejs
 A wifi configuration module for linux that uses default/open networks so that it does not have to create an access point. Other configuration options are provided such as using SD card, USB devices, (web bluetooth - not yet implemented).
 
 [![Build Status](https://travis-ci.com/csymapp/wifi-configurator.svg?branch=master)](https://travis-ci.com/csymapp/wifi-configurator)
+
 The most common way for configuring WiFi on a linux systems without any way of directly inputing the WiFi credentials into the device, such on a raspberry pi without I/O peripherals, is to have the device create an Access Point to which the user can connect and access a web page on which the credentials for a WiFi network can be entered and saved, such as happens with [Farmbot](https://github.com/FarmBot/farmbot_os). But we are persuaded that there are more efficient ways of doing this, since:
 - It is time consuming since the device has to restart after the configuration to disable the Access Point and try connecting to the WiFi network. If the credentials are wrong, the device will restart again to create the Access Point, and restart again, ad infinitum.
 - In the said system, it is not possible to the device to work without connecting to a network. This need not always be the case as some operations can be done offline.
