@@ -23,6 +23,7 @@ class wifiConfigurator extends EventEmitter {
         this.wifiStatus = true;
         this.networks = {};
         this.noInternetCounts = 0;
+        this.internetChecksPaused = false;
         this.devices = this.getUsb();
         this.configs = {}
         this.firstWiFiCheck = true;
@@ -150,6 +151,9 @@ class wifiConfigurator extends EventEmitter {
                 }
             })
             .catch((ex) => {
+                if (this.internetChecksPaused === true) {
+                    this.noInternetCounts = 0;
+                }
                 this.emit('internet', 'checked')
                 if (this.netStatus || this.firstInternetCheck) {
                     if (this.noInternetCounts > 10) {
@@ -157,7 +161,7 @@ class wifiConfigurator extends EventEmitter {
                         this.netStatus = false
                         this.firstInternetCheck = false
                         // if (this.wifiStatus) {
-                            this.emit('internet', 'disconnected')
+                        this.emit('internet', 'disconnected')
                         // }
                     } else {
                         console.log(this.noInternetCounts)
@@ -165,6 +169,19 @@ class wifiConfigurator extends EventEmitter {
                     }
                 }
             });
+    }
+
+    /**
+     * Pause internet checks so that if does not disconnect from current network if there is no internet
+     */
+    pauseInternetChecks() {
+        this.internetChecksPaused = true;
+    }
+    /**
+     * Resume internet checks so that if may disconnect from current network if there is no internet
+     */
+    resumeInternetChecks() {
+        this.internetChecksPaused = false;
     }
 
     /**
