@@ -27,7 +27,7 @@
     "axios": "^0.20.0",
     "check-internet-connected": "^2.0.5",
     "drivelist": "^9.1.0",
-    "node-etc": "^1.0.4",
+    "node-etc": "^1.0.6",
     "node-watch": "^0.7.0",
     "node-wifi": "^2.0.14",
     "node-wifi-fixes": "^2.0.20",

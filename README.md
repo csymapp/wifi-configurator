@@ -1,23 +1,33 @@
 wifi-Configurator for Nodejs
 ========
 
-A wifi configuration module for linux using SD card, USB devices and (web bluetooth - not yet implemented).
+A wifi configuration module for linux that uses default/open networks so that it does not have to create an access point. Other configuration options are provided such as using SD card, USB devices, (web bluetooth - not yet implemented).
 
 [![Build Status](https://travis-ci.com/csymapp/wifi-configurator.svg?branch=master)](https://travis-ci.com/csymapp/wifi-configurator)
+The most common way for configuring WiFi on a linux systems without any way of directly inputing the WiFi credentials into the device, such on a raspberry pi without I/O peripherals, is to have the device create an Access Point to which the user can connect and access a web page on which the credentials for a WiFi network can be entered and saved, such as happens with [Farmbot](https://github.com/FarmBot/farmbot_os). But we are persuaded that there are more efficient ways of doing this, since:
+- It is time consuming since the device has to restart after the configuration to disable the Access Point and try connecting to the WiFi network. If the credentials are wrong, the device will restart again to create the Access Point, and restart again, ad infinitum.
+- In the said system, it is not possible to the device to work without connecting to a network. This need not always be the case as some operations can be done offline.
+- The user may not have a device which which to connect to the linux system's device's Access Point to configure the network. Other options will be handy. 
+- There are easier options which may be more preferable to a user.
+- Even without an open network of the default network, the configuration server is still accessible through ethernet.
 
-This is a NodeJS module to configure WiFi on a linux system including Raspberry Pi SD card, USB devices and ( Bluetooth Low Energy and Web Bluetooth - not yet implemented). It has been designed as part of the [csynage media kit](https://csynage.com)
+wifi-Configurator is a NodeJS module to configure WiFi on a linux system including Raspberry Pi providing several options, namely:
+- Connecting to a default network. The user can create a network on his device called `wifi-configurator` with the password `wifi-config`. The device will try connecting to this network so that the user may be able to access the network configuration page.
+- If the device is unable to connect to the the default network, it will try connecting to any open networks. It will loop through all open networks as long as there is no activity in them.
+- SD Card and USB devices. WiFi credentials can be saved on SD card/USB drives in a file called `wifiConfig.yaml` or `wifiConfig.yaml` in the root directory of any of the drive partitions and inserted into the linux device. The credentials will be read as soon as the drive is connected and mounted.
+-  Bluetooth Low Energy and Web Bluetooth - (not yet implemented). 
+
+wifi-Configurator has been designed as part of the [csynage media kit](https://csynage.com)
 
 The reasons for this can be found [here](http://www.hardill.me.uk/wordpress/2016/09/13/provisioning-wifi-iot-devices/)
-
-To run clone the code
 
 
 How it works
 ------------
-If you add and run `wifi-configurator` as a module to you application, it will be able to read wifi configuration data from connected SD cards, USB drives and all mounted drives. The wifi configuration is  a `yaml/yml` file called `wifiConfig.yaml` or `wifiConfig.yaml` which is saved in the root directory of any of the drives.
+If you add and run `wifi-configurator` as a module to you application, it will be able to read wifi configuration data from connected SD cards, USB drives and all mounted drives. The wifi configuration is  a `yaml/yml` file called  which is saved in the root directory of any of the drives.
 
 A sample configuration for the `yaml` file is:
-
+`wifiConfig.yaml` or `wifiConfig.yaml`
 ```yaml
 '1':
   SSID: PARAPHRASE
@@ -72,6 +82,20 @@ wifi.on("internet", (msg) => {
 
     }
 })
+```
+
+Examples of other functions
+
+```javascript
+console.log(test.listSavedNetworks())
+console.log(test.removeSavedNetwork({ SSID: 'GS', 'password': 'GS' }))
+console.log(test.listSavedNetworks())
+console.log(test.saveNetworkifNotExists({ SSID: 'GS', 'password': 'GS' }))
+console.log(test.listSavedNetworks())
+console.log(test.editNetwork({ SSID: 'GS', 'password': 'GS' }, { SSID: 'GS', 'password': 'GS1' }))
+console.log(test.listSavedNetworks())
+test.connectToSpecificNetwork({ SSID: 'GS', password: 'GS1' })
+test.pauseInternetChecks()
 ```
 
 

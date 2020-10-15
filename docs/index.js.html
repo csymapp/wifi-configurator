@@ -29,7 +29,8 @@
             <pre class="prettyprint source linenums"><code>const os = require('os');
 const EventEmitter = require('events').EventEmitter;
 const watch = require('node-watch');
-const shell = require('shelljs');
+// const shell = require('shelljs');
+const child_process = require('child_process');
 const path = require('path');
 const etc = require('node-etc')
 const wifi = require('node-wifi');
@@ -44,12 +45,15 @@ class wifiConfigurator extends EventEmitter {
      * Read configuration from mounted devices and save to config file
      * Check if connected to wifi. If not, scan available networks and try to connect using available credentials
      */
-    constructor() {
+    constructor(init = true) {
         super()
+        this.saveDefaults();
+        process.exit();
         this.netStatus = true;
         this.wifiStatus = true;
         this.networks = {};
         this.noInternetCounts = 0;
+        this.internetChecksPaused = false;
         this.devices = this.getUsb();
         this.configs = {}
         this.firstWiFiCheck = true;
@@ -60,7 +64,81 @@ class wifiConfigurator extends EventEmitter {
         wifi.init({
             iface
         });
+        if (init) {
+            this.init();
+        }
+    }
 
+    /**
+     * list saved networks
+     * @returns {[[string, string]]}
+     */
+    listSavedNetworks() {
+
+    }
+
+    /**
+     * save default network credentials
+     */
+    saveDefaults() {
+        let defaultSSID = 'wifi-configurator'
+        let defaultPassword = 'wifi-config'
+        this.saveNetworkifNotExists({
+            SSID: defaultSSID,
+            password: defaultPassword
+        })
+    }
+
+    /**
+     * Check if credentials are already saved
+     * @param {Object} options 
+     * @param {string} options.SSID - SSID
+     * @param {string} options.password - Password
+     */
+    networkSaved(options) {
+        const { SSID, password } = options
+        if (!password) {
+            password = ''
+        }
+        let savedCredentials = etc.parseYAML(savedConfigFileName);
+        let ssidsAndPasswords = []
+        for (let i in savedCredentials) {
+            let cred = savedCredentials[i]
+            ssidsAndPasswords.push(`${Object.keys(cred).toString()}_=_=_:${Object.values(cred).toString()}`)
+        }
+        let testStr = `${SSID}_=_=_:${password}`
+        return ssidsAndPasswords.includes(testStr)
+    }
+
+    /**
+     * Save network credentials if they do not exist already.
+     * @param {Object} options 
+     * @param {string} options.SSID - SSID
+     * @param {string} options.password - Password
+     */
+    saveNetworkifNotExists(options) {
+        let networkisSaved = this.networkSaved(options);
+        if (networkisSaved) {
+            return false;
+        }
+        const { SSID, password } = options
+        if (!password) {
+            password = ''
+        }
+        let savedCredentials = etc.parseYAML(savedConfigFileName);
+        let credentialstoSave = {};
+        let index = 0;
+        credentialstoSave[index] = {}
+        credentialstoSave[index++][SSID] = password;
+        for (let i in savedCredentials) {
+            let cred = savedCredentials[i]
+            credentialstoSave[index++] = cred
+        }
+        etc.save('yaml', savedConfigFileName, credentialstoSave);
+        return true
+    }
+
+    init() {
         etc.createConfig(savedConfigFileName);
         this.watchDrives()
         this.on('wifi', (msg) => this.wifiStatusProcess(msg))
@@ -171,15 +249,18 @@ class wifiConfigurator extends EventEmitter {
                 }
             })
             .catch((ex) => {
+                if (this.internetChecksPaused === true) {
+                    this.noInternetCounts = 0;
+                }
                 this.emit('internet', 'checked')
                 if (this.netStatus || this.firstInternetCheck) {
                     if (this.noInternetCounts > 10) {
                         this.noInternetCounts = 0;
                         this.netStatus = false
                         this.firstInternetCheck = false
-                        if (this.wifiStatus) {
-                            this.emit('internet', 'disconnected')
-                        }
+                        // if (this.wifiStatus) {
+                        this.emit('internet', 'disconnected')
+                        // }
                     } else {
                         console.log(this.noInternetCounts)
                         this.noInternetCounts++
@@ -189,11 +270,25 @@ class wifiConfigurator extends EventEmitter {
     }
 
     /**
+     * Pause internet checks so that if does not disconnect from current network if there is no internet
+     */
+    pauseInternetChecks() {
+        this.internetChecksPaused = true;
+    }
+    /**
+     * Resume internet checks so that if may disconnect from current network if there is no internet
+     */
+    resumeInternetChecks() {
+        this.internetChecksPaused = false;
+    }
+
+    /**
      * List mount points of all mounted drives
      * @returns [string] - array of locations where all mounted disks are mounted
      */
     getUsb() {
-        let usbJson = JSON.parse(shell.exec('lsblk --json', { silent: true }).stdout);
+        // let usbJson = JSON.parse(shell.exec('lsblk --json', { silent: true }).stdout);
+        let usbJson = JSON.parse(child_process.execSync('lsblk --json').toString());
         let dev = usbJson.blockdevices;
         let devices = [];
         dev.forEach(function (entry) {
@@ -346,6 +441,7 @@ class wifiConfigurator extends EventEmitter {
         }
         if (selectedNetwork) {
             console.log(selectedNetwork.ssid)
+            this.emit('wifi', `Connecting to selected ${Network.ssid}`)
         }
         if (!selectedNetwork) {
             if (Object.keys(allNetworks).length > 0) {
@@ -399,7 +495,9 @@ class wifiConfigurator extends EventEmitter {
     }
 }
 
-module.exports = new wifiConfigurator();</code></pre>
+let test = new wifiConfigurator();
+
+module.exports = (init) => { return new wifiConfigurator(init); }</code></pre>
         </article>
     </section>
 
@@ -415,7 +513,7 @@ module.exports = new wifiConfigurator();</code></pre>
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.6</a> on Wed Oct 14 2020 13:58:30 GMT+0300 (East Africa Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.6</a> on Thu Oct 15 2020 22:34:19 GMT+0300 (East Africa Time)
 </footer>
 
 <script> prettyPrint(); </script>

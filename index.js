@@ -8,6 +8,7 @@ const etc = require('node-etc')
 const wifi = require('node-wifi');
 const to = require("await-to-js").to
 const checkInternetConnected = require('check-internet-connected');
+// const { resolve } = require('path');
 
 const savedConfigFileName = 'wifiConfig.yaml'
 
@@ -19,11 +20,13 @@ class wifiConfigurator extends EventEmitter {
      */
     constructor(init = true) {
         super()
+        this.saveDefaults();
         this.netStatus = true;
         this.wifiStatus = true;
         this.networks = {};
         this.noInternetCounts = 0;
         this.internetChecksPaused = false;
+        this.pauseWiFiReconnect = false;
         this.devices = this.getUsb();
         this.configs = {}
         this.firstWiFiCheck = true;
@@ -37,7 +40,127 @@ class wifiConfigurator extends EventEmitter {
         if (init) {
             this.init();
         }
+    }
 
+    /**
+     * list saved networks
+     * @returns {String[]} - SSID and password
+     */
+    listSavedNetworks() {
+        let savedCredentials = etc.parseYAML(savedConfigFileName);
+        let ret = [];
+        for (let i in savedCredentials) {
+            let cred = savedCredentials[i]
+            ret.push(cred);
+        }
+        return ret;
+    }
+
+    /**
+     * removeSavedNetwork
+     * @param {Object} options 
+     * @param {string} options.SSID - SSID
+     * @param {string} options.password - Password
+     */
+    removeSavedNetwork(options) {
+        let savedNetworks = this.listSavedNetworks();
+        if (!this.networkSaved(options)) {
+            return false;
+        }
+        // let ret = [];
+        let credentialstoSave = {};
+        let index = 0;
+        for (let dontcare in savedNetworks) {
+            let ssid = Object.keys(savedNetworks[dontcare])[0]
+            let password = Object.values(savedNetworks[dontcare])[0]
+            if (ssid === options.SSID && password === options.password) {
+
+            } else {
+                credentialstoSave[index++] = savedNetworks[dontcare]
+            }
+        }
+        etc.save('yaml', savedConfigFileName, credentialstoSave);
+        return true
+    }
+
+    /**
+     * edit network credentials
+     * @param {*} optionsOld 
+     * @param {string} optionsOld.SSID - SSID
+     * @param {string} optionsOld.password - Password
+     * @param {*} optionsNew 
+     * @param {string} optionsNew.SSID - SSID
+     * @param {string} optionsNew.password - Password
+     */
+    editNetwork(optionsOld, optionsNew) {
+        let networkisSaved = this.networkSaved(optionsOld);
+        if (!networkisSaved) {
+            return false;
+        }
+        this.removeSavedNetwork(optionsOld);
+        this.saveNetworkifNotExists(optionsNew);
+        return true;
+    }
+
+    /**
+     * save default network credentials
+     */
+    saveDefaults() {
+        let defaultSSID = 'wifi-configurator'
+        let defaultPassword = 'wifi-config'
+        this.saveNetworkifNotExists({
+            SSID: defaultSSID,
+            password: defaultPassword
+        })
+    }
+
+    /**
+     * Check if credentials are already saved
+     * @param {Object} options 
+     * @param {string} options.SSID - SSID
+     * @param {string} options.password - Password
+     */
+    networkSaved(options) {
+        const { SSID, password } = options
+        if (!password) {
+            password = ''
+        }
+        let savedCredentials = etc.parseYAML(savedConfigFileName);
+        let ssidsAndPasswords = []
+        for (let i in savedCredentials) {
+            let cred = savedCredentials[i]
+            ssidsAndPasswords.push(`${Object.keys(cred).toString()}_=_=_:${Object.values(cred).toString()}`)
+        }
+        let testStr = `${SSID}_=_=_:${password}`
+        return ssidsAndPasswords.includes(testStr)
+    }
+
+    /**
+     * Save network credentials if they do not exist already.
+     * @param {Object} options 
+     * @param {string} options.SSID - SSID
+     * @param {string} options.password - Password
+     */
+    saveNetworkifNotExists(options) {
+        let networkisSaved = this.networkSaved(options);
+        if (networkisSaved) {
+            return false;
+        }
+        const { SSID, password } = options
+        if (!password) {
+            password = ''
+        }
+        let savedCredentials = etc.parseYAML(savedConfigFileName);
+        let credentialstoSave = {};
+        let index = 0;
+        credentialstoSave[index] = {}
+        credentialstoSave[index++][SSID] = password;
+        for (let i in savedCredentials) {
+            let cred = savedCredentials[i]
+            credentialstoSave[index++] = cred
+        }
+        etc.save('yaml', savedConfigFileName, credentialstoSave);
+        return true
     }
 
     init() {
@@ -98,12 +221,15 @@ class wifiConfigurator extends EventEmitter {
             case "connected":
                 this.wifiStatus = true;
                 this.firstInternetCheck = true;
+                this.pauseWiFiReconnect = false;
                 this.checkInternetConnected();
                 break;
             case "disconnected":
                 this.wifiStatus = false;
                 this.netStatus = false;
-                this.connectToNetworks()
+                if (!this.pauseWiFiReconnect) {
+                    this.connectToNetworks()
+                }
                 break;
             case 'failed':
                 this.wifiStatus = false;
@@ -115,6 +241,8 @@ class wifiConfigurator extends EventEmitter {
                 break;
         }
     }
+
+
 
     /**
      * disconnect from network and try another one if there is no internet
@@ -186,7 +314,7 @@ class wifiConfigurator extends EventEmitter {
 
     /**
      * List mount points of all mounted drives
-     * @returns [string] - array of locations where all mounted disks are mounted
+     * @returns {string[]} - array of locations where all mounted disks are mounted
      */
     getUsb() {
         // let usbJson = JSON.parse(shell.exec('lsblk --json', { silent: true }).stdout);
@@ -310,6 +438,37 @@ class wifiConfigurator extends EventEmitter {
     }
 
     /**
+     * Connect to specific network
+     * @param {Object} options 
+     * @param {string} options.SSID - SSID
+     * @param {string} options.password - Password
+     */
+    async connectToSpecificNetwork(options) {
+        return new Promise(async (resolve, reject) => {
+            this.pauseWiFiReconnect = true;
+            await to(this.disconnect());
+            wifi.connect({ ssid: options.SSID, password: options.password }, error => {
+                if (error) {
+                    reject(error)
+                } else {
+                    resolve(true)
+                }
+            });
+        })
+    }
+
+    async disconnect() {
+        return new Promise((resolve, reject) => {
+            wifi.disconnect((error) => {
+                if (error) {
+                    return reject(error)
+                }
+                resolve(true)
+            });
+        })
+    }
+
+    /**
      * choose network to connect to
      * @param [Object] - scannedNetworks
      */
@@ -397,4 +556,14 @@ class wifiConfigurator extends EventEmitter {
     }
 }
 
+let test = new wifiConfigurator();
+console.log(test.listSavedNetworks())
+console.log(test.removeSavedNetwork({ SSID: 'GS', 'password': 'rekindlingreformation34' }))
+console.log(test.listSavedNetworks())
+console.log(test.saveNetworkifNotExists({ SSID: 'GS', 'password': 'rekindlingreformation34' }))
+console.log(test.listSavedNetworks())
+console.log(test.editNetwork({ SSID: 'GS', 'password': 'rekindlingreformation34' }, { SSID: 'GS', 'password': 'rekindlingreformation35' }))
+console.log(test.listSavedNetworks())
+test.connectToSpecificNetwork({ SSID: 'GS', password: 'rekindlingreformation' })
+test.pauseInternetChecks()
 module.exports = (init) => { return new wifiConfigurator(init); }
