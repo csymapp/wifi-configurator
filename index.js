@@ -29,7 +29,6 @@ class wifiConfigurator extends EventEmitter {
     constructor(init = true) {
         super()
         this.saveDefaults();
-        this.mdns = multicastdns()
         this.netStatus = true;
         this.wifiStatus = true;
         this.networks = {};
@@ -182,6 +181,7 @@ class wifiConfigurator extends EventEmitter {
     }
 
     init() {
+        this.mdns = multicastdns()
         etc.createConfig(savedConfigFileName);
         this.watchDrives()
         this.on('wifi', (msg) => this.wifiStatusProcess(msg))
