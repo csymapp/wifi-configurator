@@ -1,7 +1,7 @@
 wifi-Configurator for Nodejs
 ========
 
-A wifi configuration module for linux that uses default/open networks so that it does not have to create an access point. Other configuration options are provided such as using SD card, USB devices, (web bluetooth - not yet implemented).
+A wifi configuration module for linux with GUI that uses default/open networks so that it does not have to create an access point. Other configuration options are provided such as using SD card, USB devices, (web bluetooth - not yet implemented).
 
 [![Build Status](https://travis-ci.com/csymapp/wifi-configurator.svg?branch=master)](https://travis-ci.com/csymapp/wifi-configurator)
 
@@ -43,7 +43,19 @@ The credentials from all drives are saved using [node-etc ](https://www.npmjs.co
 The module will scan available networks and connect to the first valid network whose credentials are stored or to the first open network. The module will its connection to the internet and disconnect from the network if it has no connection to the internet, and try connecting to the next network. Thus the network with the best connectivity to the internet is always the one that is connected to.
 
 
-How it works
+You also optionally need another configuration file called `deviceConfig.yaml`. From this the wifi-configurator will be able to read the device name (after it has been correctly set) so as to be able to distinguish between several devices on a network. This make it easier to know which exact device your are working on that when devices are merely identified using their hostnames so that where there are several devices on a single network they are simply known by their hostname and the number which is usually added after the hostname, such as `raspberrypi-1.local`, `raspberrypi-2.local`. After the first login you can be able to change the name of your device to have your devices identified with names that you assign to them, such as `sitting room TV`, `kitchen oven`, etc.
+
+A sample configuration for this yaml file is:
+
+```yaml
+DEVICENAME: nameless
+USERS:
+  NOBODY: PASSWORD
+```
+
+`USERS` provides credentials for those who will be able to log in to your device and change the settings. It can also be used by other modules of your application that need authentication. Such basic authentication is provided so as to enable offline operation where a more sophisticated authentication server such as [keycloak](https://www.keycloak.org/) cannot be access.
+
+Usage
 ------------
 
 You need to do nothing more than:
@@ -54,10 +66,9 @@ npm install wifi-configurator
 
 ```javascript
 const wifi = require('wifi-configurator');
-
 ```
 
-You can then listen to event emitted:
+You can then listen to events emitted:
 
 ```javascript
 wifi.on("unmounted", (mp) => console.log(`unmounted ${mp}`))
@@ -99,6 +110,25 @@ test.connectToSpecificNetwork({ SSID: 'GS', password: 'GS1' })
 test.pauseInternetChecks()
 ```
 
+To configure a network, you can choose either to:
+- save a yaml file name `wifi-configurator.yaml` in an SD card or on a USB drive and connect the drive to your device. This is the easiest way.
+- create a wireless network on a ny device with the default wireless credentials saved in the device `SSID: wifi-configurator` and `password:wifi-config`. The device will connect to this network. Optionally you can create an open network and the device will connect to it. Or you can connect the device to a network using an ethernet cable. Then you will be able to connect to the configuration page of the device. The address at which this page is served can be found by performing some device discovery. An example of how this can be done is given below:
+
+```javascript
+const mdns = require('multicast-dns')()
+ 
+mdns.on('response', function(response) {
+  console.log('got a response packet:', response.answers)
+  console.log(`server is running on ${response.answers[0].target}`)
+})
+ 
+mdns.query({
+  questions:[{
+    name: `${appName}-wifi-config.local`, // appName is the name of your application
+    type: 'A'
+  }]
+})
+```
 
 API
 ---
@@ -213,3 +243,4 @@ Todo
 ----
 - [ ] add BLE and web bluetooth
 - [ ] add CLI
+- [ ] finish configuration server and page

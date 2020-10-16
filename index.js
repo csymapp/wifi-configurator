@@ -8,9 +8,17 @@ const etc = require('node-etc')
 const wifi = require('node-wifi');
 const to = require("await-to-js").to
 const checkInternetConnected = require('check-internet-connected');
+const multicastdns = require('multicast-dns');
+const portScanner = require('portscanner-sync');
+const find = require('local-devices')
+const http = require('http');
+const express = require('express');
+const app = express();
+
 // const { resolve } = require('path');
 
 const savedConfigFileName = 'wifiConfig.yaml'
+const deviceConfigFileName = 'deviceConfig.yaml'
 
 class wifiConfigurator extends EventEmitter {
     /**
@@ -21,6 +29,7 @@ class wifiConfigurator extends EventEmitter {
     constructor(init = true) {
         super()
         this.saveDefaults();
+        this.mdns = multicastdns()
         this.netStatus = true;
         this.wifiStatus = true;
         this.networks = {};
@@ -31,9 +40,11 @@ class wifiConfigurator extends EventEmitter {
         this.configs = {}
         this.firstWiFiCheck = true;
         this.firstInternetCheck = true;
+        this.serverPort = 3074;
 
         let interfaces = os.networkInterfaces();
         let iface = Object.keys(interfaces).filter(item => item.match(/^wl/))[0] || null
+        this.iface = iface;
         wifi.init({
             iface
         });
@@ -107,6 +118,12 @@ class wifiConfigurator extends EventEmitter {
      */
     saveDefaults() {
         etc.createConfig(savedConfigFileName);
+        etc.createConfig(deviceConfigFileName)
+        etc.save('yaml', deviceConfigFileName, {
+            DEVICENAME: 'nameless',
+            USERS:
+                { NOBODY: 'PASSWORD' }
+        })
         let defaultSSID = 'wifi-configurator'
         let defaultPassword = 'wifi-config'
         this.saveNetworkifNotExists({
@@ -190,11 +207,87 @@ class wifiConfigurator extends EventEmitter {
                 case "disconnected":
                     console.log('disconnected from internet');
                     break;
-
             }
         })
         this.on('internet', (msg) => this.internetStatus(msg));
+        this.httpserver()
 
+    }
+
+    /**
+     * Servers a settings page that is accessible from another device to read/edit the settings on this device
+     * @param {*} options 
+     */
+    async httpserver() {
+        app.use(express.json());
+        app.use(express.static("public"));
+        app.use('/', function (req, res) {
+            res.sendFile(path.join(process.cwd(), '/layouts/index.html'));
+        });
+        const server = http.createServer(app);
+        // use only this port if nothing is running on it yet...
+        let [err, care] = await to(portScanner.findAPortNotInUse(this.serverPort, '127.0.0.1'));//this.serverPort
+        this.serverPort = care;
+        console.log(this.serverPort)
+        // process.exit();
+        server.listen(this.serverPort);
+        console.debug('Server listening on port ' + this.serverPort);
+    }
+
+    /**
+     * get local server external IP address on given interface
+     * @param {string} iface 
+     */
+    getLocalExternalIP(iface) {
+        if (!iface) {
+            iface = this.iface
+        }
+        return [].concat(...os.networkInterfaces()[iface])
+            .find((details) => details.family === 'IPv4' && !details.internal)
+            .address
+    }
+
+    /**
+     * get local server external IP address on all interfaces
+     * @param {string} iface 
+     */
+    getAllLocalExternalIP() {
+        return [].concat(...Object.values(os.networkInterfaces()))
+            .filter(details => details.family === 'IPv4' && !details.internal).map(item => item.address)
+    }
+
+    /**
+     * mdns service discovery
+     */
+    async createAdvertisement() {
+        let ips = this.getAllLocalExternalIP();
+        let appName = etc.packageJson().name;
+        let deviceName = etc.parseYAML(deviceConfigFileName).DEVICENAME || 'nameless';
+        console.log(deviceName)
+        let target = ips.map(item => `http://${item}:${this.serverPort}`)
+        let response = {
+            name: `${appName}-${deviceName}`,
+            type: 'SRV',
+            data: {
+                port: this.serverPort,
+                weigth: 0,
+                priority: 10,
+                target: target.join(','),
+                name: 'SOME NAME'
+            }
+        }
+        this.mdns.destroy();
+        this.mdns = multicastdns();
+        this.mdns.on('query', (query) => {
+            if (query.questions[0] && query.questions[0].name === `${appName}-wifi-config.local`) {
+                console.log(response)
+                let ret = {
+                    answers: [response]
+                }
+                this.mdns.respond(ret);
+            }
+        })
+        // bonjour.publish(response)
     }
 
     /*
@@ -209,7 +302,8 @@ class wifiConfigurator extends EventEmitter {
         if (isConnected === 1 && (!this.wifiStatus || this.firstWiFiCheck)) {
             this.firstWiFiCheck = false
             this.firstInternetCheck = true;
-            this.emit('wifi', 'connected')
+            this.emit('wifi', 'connected');
+            this.createAdvertisement();
         }
         this.emit('wifi', 'checked')
     }
@@ -228,6 +322,7 @@ class wifiConfigurator extends EventEmitter {
             case "disconnected":
                 this.wifiStatus = false;
                 this.netStatus = false;
+                // this.mdns.destroy();
                 if (!this.pauseWiFiReconnect) {
                     this.connectToNetworks()
                 }
@@ -503,7 +598,7 @@ class wifiConfigurator extends EventEmitter {
         }
         if (selectedNetwork) {
             console.log(selectedNetwork.ssid)
-            this.emit('wifi', `Connecting to selected ${Network.ssid}`)
+            this.emit('wifi', `Connecting to selected ${selectedNetwork.ssid}`)
         }
         if (!selectedNetwork) {
             if (Object.keys(allNetworks).length > 0) {
@@ -557,4 +652,6 @@ class wifiConfigurator extends EventEmitter {
     }
 }
 
+let test = new wifiConfigurator();
+// test.init();
 module.exports = (init) => { return new wifiConfigurator(init); }

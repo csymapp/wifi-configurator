@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<!--
+    WARNING! Make sure that you match all Quasar related
+    tags to the same version! (Below it's "@1.14.1")
+  -->
+
+<head>
+    <link
+        href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,500,700,900|Material+Icons|Material+Icons+Sharp"
+        rel="stylesheet" type="text/css">
+    <link href="https://cdn.jsdelivr.net/npm/quasar@1.14.1/dist/quasar.min.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+    <div id="q-app">
+        <div class="q-ma-md">
+            Fork and make your own!
+            Do NOT use self-closing tags here on Codepen.
+        </div>
+
+        <div class="q-ma-md">
+            <q-btn label="Notify" color="primary" @click="notify"></q-btn>
+        </div>
+
+        <div class="q-ma-md">
+            Running Quasar v{{ version }}
+        </div>
+    </div>
+    <!-- Add the following at the end of your body tag -->
+
+    <script src="https://cdn.jsdelivr.net/npm/vue@^2.0.0/dist/vue.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quasar@1.14.1/dist/quasar.umd.min.js"></script>
+
+    <script>
+        /*
+          Example kicking off the UI. Obviously, adapt this to your specific needs.
+          Assumes you have a <div id="q-app"></div> in your <body> above
+         */
+        new Vue({
+            el: '#q-app',
+            data: function () {
+                return {
+                    version: Quasar.version
+                }
+            },
+            methods: {
+                notify: function () {
+                    this.$q.notify('Running on Quasar v' + this.$q.version)
+                }
+            }
+        })
+    </script>
+</body>
+
+</html>

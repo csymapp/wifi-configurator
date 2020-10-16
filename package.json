@@ -1,7 +1,7 @@
 {
   "name": "wifi-configurator",
-  "version": "1.0.3",
-  "description": "A wifi configuration module for linux using SD card, USB devices and bluetooth",
+  "version": "1.0.4",
+  "description": "A wifi configuration module for linux with GUI that uses default/open networks so that it does not have to create an access point. Other configuration options are provided such as using SD card, USB devices, (web bluetooth - not yet implemented)",
   "main": "index.js",
   "scripts": {
     "test": "mocha --reporter spec"
@@ -27,11 +27,14 @@
     "axios": "^0.20.0",
     "check-internet-connected": "^2.0.5",
     "drivelist": "^9.1.0",
-    "node-etc": "^1.0.6",
+    "express": "^4.17.1",
+    "local-devices": "^3.1.0",
+    "multicast-dns": "^7.2.2",
+    "node-etc": "^1.0.7",
     "node-watch": "^0.7.0",
     "node-wifi": "^2.0.14",
     "node-wifi-fixes": "^2.0.20",
-    "shelljs": "^0.8.4",
+    "portscanner-sync": "^1.0.1",
     "tea-merge": "^0.1.0",
     "usb-detection": "^4.10.0"
   },
