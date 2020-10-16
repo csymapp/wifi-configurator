@@ -652,6 +652,4 @@ class wifiConfigurator extends EventEmitter {
     }
 }
 
-let test = new wifiConfigurator();
-// test.init();
 module.exports = (init) => { return new wifiConfigurator(init); }
