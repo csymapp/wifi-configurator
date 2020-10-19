@@ -1,6 +1,6 @@
 {
   "name": "wifi-configurator",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "A wifi configuration module for linux with GUI that uses default/open networks so that it does not have to create an access point. Other configuration options are provided such as using SD card, USB devices, (web bluetooth - not yet implemented)",
   "main": "index.js",
   "scripts": {

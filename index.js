@@ -234,7 +234,7 @@ class wifiConfigurator extends EventEmitter {
         const cors = require('cors')
         app.use(cors())
         app.use(express.json());
-        app.use(express.static("layouts"));
+        app.use(express.static(path.join(__dirname,"layouts")));
         let deviceConfig = this.readDeviceConfig();
         const verify = function (req, res, next) {
             if (!req.headers.Authorization && !req.headers.authorization) {
@@ -255,7 +255,6 @@ class wifiConfigurator extends EventEmitter {
                 next()
             }
             catch (error) {
-                console.log(error)
                 return res.status(401).send()
             }
         }
@@ -335,12 +334,10 @@ class wifiConfigurator extends EventEmitter {
             }
         }) 
         app.delete('/user/:username', (req, res) => {
-            console.log(req.params);
             try{
                 this.removeUser(req.params.username)
                 return res.json({message: 'User has been removed'})
             }catch(error){
-                console.log(error)
                 return res.status(422).json({ error: error })
             }
             // let params = req.body || {};
@@ -356,11 +353,9 @@ class wifiConfigurator extends EventEmitter {
         })
 
         app.post('/add', verify, (req, res) => {
-            // console.log(req.body)
-            res.send('going to add...')
         })
         app.get('/', function (req, res) {
-            res.sendFile(path.join(process.cwd(), '/layouts/index.html'));
+            res.sendFile(path.join(__dirname, '/layouts/index.html'));
         });
 
         const server = http.createServer(app);
