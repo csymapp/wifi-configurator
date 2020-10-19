@@ -1,6 +1,7 @@
 const os = require('os');
 const EventEmitter = require('events').EventEmitter;
 const watch = require('node-watch');
+const clone = require('clone')
 // const shell = require('shelljs');
 const child_process = require('child_process');
 const path = require('path');
@@ -10,7 +11,10 @@ const to = require("await-to-js").to
 const checkInternetConnected = require('check-internet-connected');
 const multicastdns = require('multicast-dns');
 const portScanner = require('portscanner-sync');
-const find = require('local-devices')
+const cryptoRandomString = require('crypto-random-string');
+const bcrypt = require('bcrypt');
+const jwt = require("jsonwebtoken");
+const saltRounds = 10;
 const http = require('http');
 const express = require('express');
 const app = express();
@@ -19,6 +23,11 @@ const app = express();
 
 const savedConfigFileName = 'wifiConfig.yaml'
 const deviceConfigFileName = 'deviceConfig.yaml'
+const defaultDeviceConfig = {
+    DEVICENAME: 'nameless',
+    USERS:
+        { NOBODY: 'PASSWORD' }
+}
 
 class wifiConfigurator extends EventEmitter {
     /**
@@ -40,7 +49,7 @@ class wifiConfigurator extends EventEmitter {
         this.firstWiFiCheck = true;
         this.firstInternetCheck = true;
         this.serverPort = 3074;
-
+        defaultDeviceConfig.USERS.NOBODY = this.encrypt(defaultDeviceConfig.USERS.NOBODY)
         let interfaces = os.networkInterfaces();
         let iface = Object.keys(interfaces).filter(item => item.match(/^wl/))[0] || null
         this.iface = iface;
@@ -117,12 +126,15 @@ class wifiConfigurator extends EventEmitter {
      */
     saveDefaults() {
         etc.createConfig(savedConfigFileName);
-        etc.createConfig(deviceConfigFileName)
-        etc.save('yaml', deviceConfigFileName, {
-            DEVICENAME: 'nameless',
-            USERS:
-                { NOBODY: 'PASSWORD' }
-        })
+        etc.createConfig(deviceConfigFileName);
+        try {
+            etc.addConfig('yaml', deviceConfigFileName, {
+                ACCESS_TOKEN_SECRET: cryptoRandomString({ length: 20, type: 'base64' }),
+                ACCESS_TOKEN_LIFE: 1800
+            })
+        } catch (error) {
+
+        }
         let defaultSSID = 'wifi-configurator'
         let defaultPassword = 'wifi-config'
         this.saveNetworkifNotExists({
@@ -187,8 +199,8 @@ class wifiConfigurator extends EventEmitter {
         this.on('wifi', (msg) => this.wifiStatusProcess(msg))
         this.checkWifiStatus();
 
-        this.on("unmounted", (mp) => console.log(`unmounted ${mp}`))
-        this.on("mounted", (mp) => { console.log(`mounted ${mp}`) });
+        this.on("unmounted", (mp) => { console.log(`unmounted ${mp}`) })
+        this.on("mounted", (mp) => { this.readConfigurations(); console.log(`mounted ${mp}`) });
         this.on("wifi", (msg) => {
             switch (msg) {
                 case "connected":
@@ -219,11 +231,138 @@ class wifiConfigurator extends EventEmitter {
      * @param {*} options 
      */
     async httpserver() {
+        const cors = require('cors')
+        app.use(cors())
         app.use(express.json());
-        app.use(express.static("public"));
-        app.use('/', function (req, res) {
+        app.use(express.static("layouts"));
+        let deviceConfig = this.readDeviceConfig();
+        const verify = function (req, res, next) {
+            if (!req.headers.Authorization && !req.headers.authorization) {
+                if (req.body.token)
+                    req.headers['authorization'] = `bearer ${req.body.token}`
+                else if (req.query.token)
+                    req.headers['authorization'] = `bearer ${req.query.token}`
+            }
+            let accessToken = req.headers['authorization']
+            if (!accessToken) {
+                return res.status(403).send()
+            }
+
+            let payload;
+            accessToken = accessToken.replace(/[B]*[b]*earer /, '');
+            try {
+                payload = jwt.verify(accessToken, deviceConfig.ACCESS_TOKEN_SECRET)
+                next()
+            }
+            catch (error) {
+                console.log(error)
+                return res.status(401).send()
+            }
+        }
+        app.get('/app', cors(), (req, res) => {
+            res.json({ app: etc.packageJson().name })
+        })
+        app.get('/device', cors(), (req, res) => {
+            res.json({ device: deviceConfig.DEVICENAME })
+        })
+        app.post('/token', cors(), verify, (req, res) => {
+            let accessToken = (req.headers['authorization'] || '').replace(/[B]*[b]*earer /, '')
+            let tokenData = jwt.decode(accessToken);
+            let username = tokenData.username;
+            let payload = { username }
+            accessToken = jwt.sign(payload, deviceConfig.ACCESS_TOKEN_SECRET, {
+                algorithm: "HS256",
+                expiresIn: deviceConfig.ACCESS_TOKEN_LIFE
+            })
+            res.json({ device: deviceConfig.DEVICENAME, app: etc.packageJson().name, token: accessToken, username })
+        })
+        app.get('/users', cors(), verify, (req, res) => {
+            let users = this.listUsers();
+            let ret = Object.keys(users)
+            res.json({ users: ret})
+        })
+        app.get('/savednetworks', cors(), verify, (req, res) => {
+            let networks = this.listSavedNetworks();
+            res.json({ networks})
+        })
+        app.get('/availablenetworks', cors(), verify, async (req, res) => {
+            let networks = await this.listAvailbleNetworks();
+            res.json({ networks})
+        })
+        app.post('/login', (req, res) => {
+            let params = req.body || {};
+            if (!params.username) {
+                return res.status(422).json({ error: `username missing` })
+            }
+            if (!params.password) {
+                return res.status(422).json({ error: `password missing` })
+            }
+            let authenticate = this.authenticateUser(params.username, params.password)
+            if (!authenticate) {
+                return res.status(401).json({ error: `wrong username or password` })
+            }
+
+            let payload = { username: params.username }
+            let accessToken = jwt.sign(payload, deviceConfig.ACCESS_TOKEN_SECRET, {
+                algorithm: "HS256",
+                expiresIn: deviceConfig.ACCESS_TOKEN_LIFE
+            })
+            res.send({ token: accessToken })
+        })
+        app.post('/password', (req, res) => {
+            let params = req.body || {};
+            let accessToken = (req.headers['authorization'] || '').replace(/[B]*[b]*earer /, '')
+            let tokenData = jwt.decode(accessToken);
+            let userName = tokenData.username;
+            let authenticated = this.authenticateUser(userName, params.password);
+            if(!authenticated){
+                return res.status(422).json({ error: `wrong password` })
+            }
+            this.removeUser(userName, true);
+            this.addUser(userName, params.newPassword);
+            res.json({message: 'Password has been changed'})
+        })
+        app.post('/user', (req, res) => {
+            let params = req.body || {};
+            let accessToken = (req.headers['authorization'] || '').replace(/[B]*[b]*earer /, '')
+            let tokenData = jwt.decode(accessToken);
+            let userName = tokenData.username;
+            try{
+                this.addUser(params.username, params.password)
+                return res.json({message: 'User has been added'})
+            }catch(error){
+                return res.status(422).json({ error: error })
+            }
+        }) 
+        app.delete('/user/:username', (req, res) => {
+            console.log(req.params);
+            try{
+                this.removeUser(req.params.username)
+                return res.json({message: 'User has been removed'})
+            }catch(error){
+                console.log(error)
+                return res.status(422).json({ error: error })
+            }
+            // let params = req.body || {};
+            // let accessToken = (req.headers['authorization'] || '').replace(/[B]*[b]*earer /, '')
+            // let tokenData = jwt.decode(accessToken);
+            // let userName = tokenData.username;
+            // try{
+            //     this.addUser(params.username, params.password)
+            //     return res.json({message: 'User has been added'})
+            // }catch(error){
+            //     return res.status(422).json({ error: error })
+            // }
+        })
+
+        app.post('/add', verify, (req, res) => {
+            // console.log(req.body)
+            res.send('going to add...')
+        })
+        app.get('/', function (req, res) {
             res.sendFile(path.join(process.cwd(), '/layouts/index.html'));
         });
+
         const server = http.createServer(app);
         // use only this port if nothing is running on it yet...
         let [err, care] = await to(portScanner.findAPortNotInUse(this.serverPort, '127.0.0.1'));//this.serverPort
@@ -257,13 +396,168 @@ class wifiConfigurator extends EventEmitter {
     }
 
     /**
+     * Read saved device configuration data, or return the default values
+     * @returns {object} - {DEVICENAME, USERS:{USERNAME: PASSWORD}}
+     */
+    readDeviceConfig() {
+        let dirs = this.devices
+        let deviceConfig = {};
+        let savedDeviceConfig = etc.parseYAML(deviceConfigFileName);
+        let deviceConfigInitial = clone(savedDeviceConfig);
+        for (let dir of dirs) {
+            let filePath = path.join(dir, deviceConfigFileName);
+            let configurationRead = etc.readConfigData('yaml', filePath);
+            if (configurationRead.DEVICENAME !== undefined) {
+                deviceConfig.DEVICENAME = configurationRead.DEVICENAME;
+            }
+            if (!configurationRead.USERS) {
+                configurationRead.USERS = {}
+            }
+            if (!deviceConfig.USERS) {
+                deviceConfig.USERS = {}
+            }
+            if (Object.keys(configurationRead.USERS).length === 0) {
+                configurationRead.USERS = {}
+            }
+            if (Object.keys(deviceConfig.USERS) === 0) {
+                deviceConfig.USERS = {}
+            }
+            for (let i in configurationRead.USERS) {
+                let userName = i
+                let password = this.encrypt(configurationRead.USERS[userName]);
+                deviceConfig.USERS[userName] = password
+            }
+            if (configurationRead.DEVICENAME !== undefined) {
+                savedDeviceConfig.DEVICENAME = configurationRead.DEVICENAME;
+            }
+        }
+        if (!savedDeviceConfig.USERS) {
+            savedDeviceConfig.USERS = {}
+        }
+        for (let userName in deviceConfig.USERS) {
+            savedDeviceConfig.USERS[userName] = deviceConfig.USERS[userName]
+        }
+
+        let arraysAreEqual = (arr1, arr2) => arr1.length === arr2.length && !arr1.some((v) => arr2.indexOf(v) < 0) && !arr2.some((v) => arr1.indexOf(v) < 0)
+        // save if changes
+        if (deviceConfigInitial.DEVICENAME !== savedDeviceConfig.DEVICENAME || !arraysAreEqual(Object.keys(deviceConfigInitial.USERS) || [], Object.keys(savedDeviceConfig.USERS) || [])) {
+            etc.save("yaml", deviceConfigFileName, savedDeviceConfig);
+        }
+        try {
+            deviceConfig = etc.parseYAML(deviceConfigFileName)
+            if (Object.keys(deviceConfig).length === 0) {
+                throw "not found"
+            }
+        } catch (error) {
+            deviceConfig = defaultDeviceConfig
+        }
+        return deviceConfig
+    }
+
+
+    /**
+     * Change device name
+     * @param {string} deviceName 
+     */
+    editDeviceName(deviceName = 'nameless') {
+        let deviceConfig = etc.parseYAML(deviceConfigFileName)
+        deviceConfig.DEVICENAME = deviceName;
+        etc.save("yaml", deviceConfigFileName, deviceConfig);
+        return true
+    }
+
+    encrypt(password) {
+        const salt = bcrypt.genSaltSync(saltRounds);
+        const hash = bcrypt.hashSync(password, salt);
+        return hash
+    }
+
+    /**
+     * create a new user
+     * @param {string} username 
+     * @param {string} password 
+     */
+    addUser(username, password) {
+        if (!username || !password) {
+            throw `missing username or password`
+        }
+        let deviceConfig = etc.parseYAML(deviceConfigFileName);
+        if (!deviceConfig.USERS) {
+            deviceConfig['USERS'] = {};
+        }
+        if (deviceConfig.USERS[username] !== undefined) {
+            throw `${username} already exists`
+        }
+        deviceConfig.USERS[username] = this.encrypt(password);
+        etc.save("yaml", deviceConfigFileName, deviceConfig);
+        return true;
+    }
+
+    /**
+     * List Users
+     * @returns {object}
+     */
+    listUsers() {
+        let deviceConfig = etc.parseYAML(deviceConfigFileName);
+        if (!deviceConfig.USERS) {
+            deviceConfig['USERS'] = {};
+        }
+        return deviceConfig.USERS
+    }
+
+    /**
+     * Remove a user
+     * @param {string} username 
+     * @param {boolean} [force] - remove even if only single user is left
+     */
+    removeUser(username, force = false) {
+        if (!username) {
+            throw `missing username`
+        }
+        let users = this.listUsers();
+        if(!Object.keys(users).includes(username)){
+            throw 'User does not exist!'
+        }
+        let deviceConfig = etc.parseYAML(deviceConfigFileName);
+        if (!deviceConfig.USERS) {
+            deviceConfig['USERS'] = {};
+        }
+        if (Object.keys(deviceConfig.USERS).length <= 1 && !force) {
+            throw `Only one user left. Can't remove`
+        }
+        delete deviceConfig.USERS[username];
+        etc.save("yaml", deviceConfigFileName, deviceConfig);
+        return true;
+    }
+
+    /**
+     * Authenticate configuration user
+     * @param {string} username 
+     * @param {string} password 
+     */
+    authenticateUser(username, password) {
+        if (!username || !password) {
+            throw `missing username or password`
+        }
+        let deviceConfig = etc.parseYAML(deviceConfigFileName);
+        if (!deviceConfig.USERS) {
+            deviceConfig['USERS'] = {};
+        }
+        if (Object.keys(deviceConfig.USERS).length === 0) {
+            deviceConfig.USERS = defaultDeviceConfig.USERS
+        }
+        let comparePassword = deviceConfig.USERS[username] || ''
+        let autheticate = bcrypt.compareSync(password, comparePassword);
+        return autheticate;
+    }
+
+    /**
      * mdns service discovery
      */
     async createAdvertisement() {
         let ips = this.getAllLocalExternalIP();
         let appName = etc.packageJson().name;
-        let deviceName = etc.parseYAML(deviceConfigFileName).DEVICENAME || 'nameless';
-        console.log(deviceName)
+        let deviceName = this.readDeviceConfig().DEVICENAME;
         let target = ips.map(item => `http://${item}:${this.serverPort}`)
         let response = {
             name: `${appName}-${deviceName}`,
@@ -272,15 +566,14 @@ class wifiConfigurator extends EventEmitter {
                 port: this.serverPort,
                 weigth: 0,
                 priority: 10,
-                target: target.join(','),
-                name: 'SOME NAME'
+                target: target.join(',')
             }
         }
         this.mdns.destroy();
         this.mdns = multicastdns();
         this.mdns.on('query', (query) => {
             if (query.questions[0] && query.questions[0].name === `${appName}-wifi-config.local`) {
-                console.log(response)
+                // console.log(response)
                 let ret = {
                     answers: [response]
                 }
@@ -441,14 +734,13 @@ class wifiConfigurator extends EventEmitter {
             let curr = this.getUsb();
             let add = curr.filter(item => !this.devices.includes(item))
             let rem = this.devices.filter(item => !curr.includes(item))
-            if (add.length > 0) { // wait for all partitions on disk to be mounted
+            if (add.length >= 0) { // wait for all partitions on disk to be mounted
                 setTimeout(() => {
                     curr = this.getUsb();
                     add = curr.filter(item => !this.devices.includes(item))
                     if (add.length > 0) {
-                        add.map(mountPoint => this.emit("mounted", mountPoint))
-                        // 
                         this.devices = curr;
+                        add.map(mountPoint => this.emit("mounted", mountPoint))
                     }
                 }, 5000)
             }
@@ -463,26 +755,63 @@ class wifiConfigurator extends EventEmitter {
      * Read configurations from drives and save then to ${savedConfigFileName}
      */
     readConfigurations() {
+        this.readDeviceConfig();
         let dirs = this.devices;
         let savedConfig = etc.readConfigData('yaml', savedConfigFileName);
-
         let savedConfigs = [];
         let configstoSave = [];
         for (let i in savedConfig) {
             let config = savedConfig[i]
             savedConfigs.push(`${Object.keys(config)}${Object.values(config)}`)
         }
+
         for (let dir of dirs) {
             let filePath = path.join(dir, savedConfigFileName);
-            let configuration = etc.readConfigData('yaml', filePath);
+            let configurationRead = etc.readConfigData('yaml', filePath);
+            let configuration = {};
+            let tmpConfiguration = [];
+            for (let key in configurationRead) {
+                let value = configurationRead[key]
+                if (typeof value !== 'object') {
+                    let obj = {}
+                    obj[key] = value;
+                    tmpConfiguration.push(obj)
+                } else { // is an object/array.. how to distinguish between an object and an array...
+                    for (let innerKey in value) {
+                        let innerValue = value[innerKey]
+                        if (typeof innerValue !== 'object') { // is a string
+                            let tmp = [];
+                            try { // is an array
+                                tmp = [...value];
+                                let obj = {}
+                                obj[key] = innerValue;
+                                tmpConfiguration.push(obj)
+                            } catch (error) { // is an object 
+                                tmpConfiguration.push(value)
+                            }
+                        }
+                    }
+                }
+            }
+            for (let i in tmpConfiguration) {
+                configuration[i] = tmpConfiguration[i]
+            }
+            // for (let i in configuration)
             for (let i in configuration) {
                 let config = configuration[i]
-                config = `${Object.keys(config)}${Object.values(config)}`
+                if (typeof config === 'object') {
+                    config = `${Object.keys(config)}${Object.values(config)}`
+                } else {
+                    // console.log(key, o)
+                    config = `${key}${config}`
+                }
+
                 if (!savedConfigs.includes(config)) {
                     configstoSave.push(configuration[i])
                 }
             }
         }
+
         savedConfigs = []
         for (let i in savedConfig) {
             let config = savedConfig[i]
@@ -514,6 +843,15 @@ class wifiConfigurator extends EventEmitter {
             this.emit('wifi', 'connected')
             this.emit('connected')
         }
+    }
+
+    /**
+     * List avaialable networks
+     */
+    async listAvailbleNetworks(){
+        let scannedNetworks = await this.scan();
+        scannedNetworks = scannedNetworks.filter(item => item.ssid !== '')
+        return scannedNetworks
     }
 
     /**
