@@ -435,6 +435,10 @@ class wifiConfigurator extends EventEmitter {
 
         let arraysAreEqual = (arr1, arr2) => arr1.length === arr2.length && !arr1.some((v) => arr2.indexOf(v) < 0) && !arr2.some((v) => arr1.indexOf(v) < 0)
         // save if changes
+        if(deviceConfigInitial.USERS === undefined){
+            deviceConfigInitial.USERS = {}
+        }
+        savedDeviceConfig.USERS = savedDeviceConfig.USERS || {}
         if (deviceConfigInitial.DEVICENAME !== savedDeviceConfig.DEVICENAME || !arraysAreEqual(Object.keys(deviceConfigInitial.USERS) || [], Object.keys(savedDeviceConfig.USERS) || [])) {
             etc.save("yaml", deviceConfigFileName, savedDeviceConfig);
         }
