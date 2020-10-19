@@ -1,6 +1,6 @@
 {
   "name": "wifi-configurator",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "A wifi configuration module for linux with GUI that uses default/open networks so that it does not have to create an access point. Other configuration options are provided such as using SD card, USB devices, (web bluetooth - not yet implemented)",
   "main": "index.js",
   "scripts": {
@@ -28,6 +28,7 @@
     "bcrypt": "^5.0.0",
     "check-internet-connected": "^2.0.5",
     "clone": "^2.1.2",
+    "cors": "^2.8.5",
     "crypto-random-string": "^3.3.0",
     "drivelist": "^9.1.0",
     "express": "^4.17.1",
@@ -43,7 +44,6 @@
     "usb-detection": "^4.10.0"
   },
   "devDependencies": {
-    "cors": "^2.8.5",
     "mocha": "^8.1.3"
   }
 }
