@@ -585,3 +585,4 @@ Todo
 - [ ] add BLE and web bluetooth
 - [ ] add CLI
 - [ ] Reading configuration data from a connected phone
+- [ ] Case insensitive usernames
