@@ -18,8 +18,8 @@ const saltRounds = 10;
 const http = require('http');
 const express = require('express');
 const app = express();
+const WebSocket = require('ws')
 
-// const { resolve } = require('path');
 
 const savedConfigFileName = 'wifiConfig.yaml'
 const deviceConfigFileName = 'deviceConfig.yaml'
@@ -37,10 +37,12 @@ class wifiConfigurator extends EventEmitter {
      */
     constructor(init = true) {
         super()
+        // this.setMaxListeners(100);
         this.saveDefaults();
         this.netStatus = true;
         this.wifiStatus = true;
         this.networks = {};
+        this.connectedNetwork = ''
         this.noInternetCounts = 0;
         this.internetChecksPaused = false;
         this.pauseWiFiReconnect = false;
@@ -223,7 +225,60 @@ class wifiConfigurator extends EventEmitter {
         })
         this.on('internet', (msg) => this.internetStatus(msg));
         this.httpserver()
+    }
 
+    /**
+     * Change device name
+     * @param {string} deviceName 
+     */
+    changeDeviceName(deviceName) {
+        let deviceConfig = this.readDeviceConfig();
+        deviceConfig.DEVICENAME = deviceName;
+        etc.save("yaml", deviceConfigFileName, deviceConfig);
+        return true
+    }
+
+    /**
+     * Get connected network
+     */
+    async getConnectedNetwork() {
+        let connections = await this.listConnections() || [];
+        connections = connections.filter(connection => connection.iface = this.iface && connection.ssid !== '')
+        let ssid
+        try {
+            ssid = connections[0].ssid
+        } catch (error) {
+            ssid = ''
+        }
+        return ssid;
+    }
+
+    /**
+     * remove saved network
+     * @param {string} ssid 
+     * @param {string} password 
+     */
+    removeSavedNetworkv1(ssid, password) {
+        let savedNetworks = etc.parseYAML(savedConfigFileName) || {};
+        let tmp = [];
+        for (let i in savedNetworks) {
+            let net = savedNetworks[i];
+            net = `${Object.keys(net)[0]}_=_=_:${Object.values(net)[0]}`
+            tmp.push(net)
+        }
+        let compare = `${ssid}_=_=_:${password}`
+        if (!tmp.includes(compare)) {
+            throw new Error('No such network found')
+        }
+        let objToSave = {};
+        for (let i in savedNetworks) {
+            let net = savedNetworks[i];
+            net = `${Object.keys(net)[0]}_=_=_:${Object.values(net)[0]}`
+            if (net !== compare) {
+                objToSave[Object.keys(net)[0]] = Object.values(net)[0]
+            }
+        }
+        etc.save('yaml', savedConfigFileName, objToSave);
     }
 
     /**
@@ -234,7 +289,7 @@ class wifiConfigurator extends EventEmitter {
         const cors = require('cors')
         app.use(cors())
         app.use(express.json());
-        app.use(express.static(path.join(__dirname,"layouts")));
+        app.use(express.static(path.join(__dirname, "layouts")));
         let deviceConfig = this.readDeviceConfig();
         const verify = function (req, res, next) {
             if (!req.headers.Authorization && !req.headers.authorization) {
@@ -258,12 +313,37 @@ class wifiConfigurator extends EventEmitter {
                 return res.status(401).send()
             }
         }
+        /**
+         * Get the application name
+         */
         app.get('/app', cors(), (req, res) => {
             res.json({ app: etc.packageJson().name })
         })
+        /**
+         * Get he device name
+         */
         app.get('/device', cors(), (req, res) => {
+            deviceConfig = this.readDeviceConfig();
             res.json({ device: deviceConfig.DEVICENAME })
         })
+        /**
+         * Change device name
+         */
+        app.post('/device', cors(), verify, (req, res) => {
+            let params = req.body || {};
+            if (!params.devicename || params.devicename === '') {
+                return res.status(422).json({ error: 'Missing device name' })
+            }
+            try {
+                this.changeDeviceName(params.devicename)
+                return res.json({ message: `Device name has been changed` })
+            } catch (error) {
+                return res.status(422).json({ error: error })
+            }
+        })
+        /**
+         * Check validfy of token and refresh
+         */
         app.post('/token', cors(), verify, (req, res) => {
             let accessToken = (req.headers['authorization'] || '').replace(/[B]*[b]*earer /, '')
             let tokenData = jwt.decode(accessToken);
@@ -275,19 +355,33 @@ class wifiConfigurator extends EventEmitter {
             })
             res.json({ device: deviceConfig.DEVICENAME, app: etc.packageJson().name, token: accessToken, username })
         })
+        /**
+         * list users
+         */
         app.get('/users', cors(), verify, (req, res) => {
             let users = this.listUsers();
             let ret = Object.keys(users)
-            res.json({ users: ret})
+            res.json({ users: ret })
         })
-        app.get('/savednetworks', cors(), verify, (req, res) => {
+        /**
+         * list saved networks
+         */
+        app.get('/savednetworks', cors(), verify, async (req, res) => {
             let networks = this.listSavedNetworks();
-            res.json({ networks})
+            let ssid = await this.getConnectedNetwork();
+            res.json({ networks, connected: ssid })
         })
+        /**
+         * list available networks
+         */
         app.get('/availablenetworks', cors(), verify, async (req, res) => {
             let networks = await this.listAvailbleNetworks();
-            res.json({ networks})
+            let ssid = await this.getConnectedNetwork();
+            res.json({ networks, connected: ssid })
         })
+        /**
+         * log in and get token
+         */
         app.post('/login', (req, res) => {
             let params = req.body || {};
             if (!params.username) {
@@ -308,64 +402,157 @@ class wifiConfigurator extends EventEmitter {
             })
             res.send({ token: accessToken })
         })
-        app.post('/password', (req, res) => {
+        /**
+         * change password
+         */
+        app.post('/password', cors(), verify, (req, res) => {
             let params = req.body || {};
             let accessToken = (req.headers['authorization'] || '').replace(/[B]*[b]*earer /, '')
             let tokenData = jwt.decode(accessToken);
             let userName = tokenData.username;
             let authenticated = this.authenticateUser(userName, params.password);
-            if(!authenticated){
+            if (!authenticated) {
                 return res.status(422).json({ error: `wrong password` })
             }
             this.removeUser(userName, true);
             this.addUser(userName, params.newPassword);
-            res.json({message: 'Password has been changed'})
+            res.json({ message: 'Password has been changed' })
         })
-        app.post('/user', (req, res) => {
+        /**
+         * add new user
+         */
+        app.post('/user', cors(), verify, (req, res) => {
             let params = req.body || {};
-            let accessToken = (req.headers['authorization'] || '').replace(/[B]*[b]*earer /, '')
-            let tokenData = jwt.decode(accessToken);
-            let userName = tokenData.username;
-            try{
+            try {
                 this.addUser(params.username, params.password)
-                return res.json({message: 'User has been added'})
-            }catch(error){
+                return res.json({ message: 'User has been added' })
+            } catch (error) {
                 return res.status(422).json({ error: error })
             }
-        }) 
-        app.delete('/user/:username', (req, res) => {
-            try{
+        })
+        /**
+         * delete user
+         */
+        app.delete('/user/:username', cors(), verify, (req, res) => {
+            try {
                 this.removeUser(req.params.username)
-                return res.json({message: 'User has been removed'})
-            }catch(error){
+                return res.json({ message: 'User has been removed' })
+            } catch (error) {
                 return res.status(422).json({ error: error })
             }
-            // let params = req.body || {};
-            // let accessToken = (req.headers['authorization'] || '').replace(/[B]*[b]*earer /, '')
-            // let tokenData = jwt.decode(accessToken);
-            // let userName = tokenData.username;
-            // try{
-            //     this.addUser(params.username, params.password)
-            //     return res.json({message: 'User has been added'})
-            // }catch(error){
-            //     return res.status(422).json({ error: error })
-            // }
+        })
+        /**
+         * Delete saved network credentials
+         */
+        app.delete('/network/:ssid/:password', cors(), verify, (req, res) => {
+            try {
+                this.removeSavedNetwork({ SSID: req.params.ssid, password: req.params.password })
+                return res.json({ message: `Password for ${req.params.ssid} has been removed` })
+            } catch (error) {
+                return res.status(422).json({ error: error })
+            }
+        })
+        /**
+         * save network credentials
+         */
+        app.post('/network/:ssid/:password', cors(), verify, (req, res) => {
+            try {
+                this.saveNetworkifNotExists({ SSID: req.params.ssid, password: req.params.password })
+                return res.json({ message: `Network credentials have been saved` })
+            } catch (error) {
+                return res.status(422).json({ error: error })
+            }
+        })
+        /**
+         * disconnect from network
+         */
+        app.delete('/connection', cors(), verify, (req, res) => {
+            try {
+                this.disconnect()
+                return res.json({ message: `Disconnected from WiFi` })
+            } catch (error) {
+                return res.status(422).json({ error: error })
+            }
+        })
+        /**
+         * connect to network
+         */
+        app.post('/connection', cors(), verify, async (req, res) => {
+            let params = req.body || {};
+            try {
+                await this.connectToSpecificNetwork({ SSID: params.ssid, password: params.password })
+                return res.json({ message: `Trying to connect to ${params.ssid}` })
+            } catch (error) {
+                return res.status(422).json({ error: error })
+            }
         })
 
-        app.post('/add', verify, (req, res) => {
-        })
         app.get('/', function (req, res) {
             res.sendFile(path.join(__dirname, '/layouts/index.html'));
         });
 
         const server = http.createServer(app);
-        // use only this port if nothing is running on it yet...
         let [err, care] = await to(portScanner.findAPortNotInUse(this.serverPort, '127.0.0.1'));//this.serverPort
         this.serverPort = care;
         console.log(this.serverPort)
         // process.exit();
         server.listen(this.serverPort);
         console.debug('Server listening on port ' + this.serverPort);
+
+        const broadcast = (wss, msg) => {
+            // console.log(msg)
+            wss.clients.forEach(function each(client) {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify(msg));
+                }
+            });
+        }
+
+        const sendEvents = (wss) => {
+            this.on("wifi", (msg) => {
+                // console.log(msg)
+                try {
+                    switch (true) {
+                        // case "connected":
+                        case new RegExp('^connected').test(msg):
+                            broadcast(wss, { 'msg': 'connected to wifi', 'type': 'positive' })
+                            break;
+                        // case "disconnected":
+                        case new RegExp('^disconnected').test(msg):
+                            broadcast(wss, { 'msg': 'disconnected from wifi', 'type': 'negative' })
+                            break;
+                        case new RegExp('Connecting to').test(msg):
+                            broadcast(wss, { 'msg': msg, 'type': 'info' })
+                            break;
+                    }
+                } catch (error) {
+                    console.error(error)
+                }
+            })
+            this.on("unmounted", (mp) => broadcast(wss, { 'msg': `unmounted ${mp}`, 'info': 'negative' }));
+            this.on("mounted", (mp) => broadcast(wss, { 'msg': `mounted ${mp}`, 'success': 'negative' }));
+            this.on("internet", (msg) => {
+                switch (msg) {
+                    case "connected":
+                        broadcast(wss, { 'msg': 'connected to internet', 'type': 'positive' })
+                        break;
+                    case "disconnected":
+                        broadcast(wss, { 'msg': 'disconnected from internet', 'type': 'negative' })
+                        break;
+
+                }
+            })
+        }
+
+        const wss = new WebSocket.Server({ server });
+        sendEvents(wss)
+        wss.on('connection', (ws) => {            
+            ws.on('message', (message) => {
+                // this.pauseInternetChecks();
+                this.noInternetCounts = 0;
+                
+            });
+        });
     }
 
     /**
@@ -435,7 +622,7 @@ class wifiConfigurator extends EventEmitter {
 
         let arraysAreEqual = (arr1, arr2) => arr1.length === arr2.length && !arr1.some((v) => arr2.indexOf(v) < 0) && !arr2.some((v) => arr1.indexOf(v) < 0)
         // save if changes
-        if(deviceConfigInitial.USERS === undefined){
+        if (deviceConfigInitial.USERS === undefined) {
             deviceConfigInitial.USERS = {}
         }
         savedDeviceConfig.USERS = savedDeviceConfig.USERS || {}
@@ -465,6 +652,10 @@ class wifiConfigurator extends EventEmitter {
         return true
     }
 
+    /**
+     * encrypt password
+     * @param {string} password 
+     */
     encrypt(password) {
         const salt = bcrypt.genSaltSync(saltRounds);
         const hash = bcrypt.hashSync(password, salt);
@@ -514,7 +705,7 @@ class wifiConfigurator extends EventEmitter {
             throw `missing username`
         }
         let users = this.listUsers();
-        if(!Object.keys(users).includes(username)){
+        if (!Object.keys(users).includes(username)) {
             throw 'User does not exist!'
         }
         let deviceConfig = etc.parseYAML(deviceConfigFileName);
@@ -847,8 +1038,9 @@ class wifiConfigurator extends EventEmitter {
     /**
      * List avaialable networks
      */
-    async listAvailbleNetworks(){
+    async listAvailbleNetworks() {
         let scannedNetworks = await this.scan();
+        // console.log(scannedNetworks)
         scannedNetworks = scannedNetworks.filter(item => item.ssid !== '')
         return scannedNetworks
     }
@@ -884,12 +1076,16 @@ class wifiConfigurator extends EventEmitter {
                 if (error) {
                     reject(error)
                 } else {
+                    this.connectedNetwork = options.SSID;
                     resolve(true)
                 }
             });
         })
     }
 
+    /**
+     * disconnect
+     */
     async disconnect() {
         return new Promise((resolve, reject) => {
             wifi.disconnect((error) => {
