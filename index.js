@@ -285,7 +285,7 @@ class wifiConfigurator extends EventEmitter {
      * @returns {string}
      */
     getDeviceName(){
-        return deviceConfig.DEVICENAME || defaultDeviceConfig.DEVICENAME
+        return this.readDeviceConfig().DEVICENAME || defaultDeviceConfig.DEVICENAME
     }
 
     /**
