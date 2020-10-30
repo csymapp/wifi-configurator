@@ -324,7 +324,7 @@ class wifiConfigurator extends EventEmitter {
          */
         app.get('/device', cors(), (req, res) => {
             deviceConfig = this.readDeviceConfig();
-            res.json({ device: deviceConfig.DEVICENAME })
+            res.json({ device: deviceConfig.DEVICENAME || defaultDeviceConfig.DEVICENAME})
         })
         /**
          * Change device name
