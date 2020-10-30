@@ -747,7 +747,7 @@ class wifiConfigurator extends EventEmitter {
     async createAdvertisement() {
         let ips = this.getAllLocalExternalIP();
         let appName = etc.packageJson().name;
-        let deviceName = this.readDeviceConfig().DEVICENAME;
+        let deviceName = this.readDeviceConfig().DEVICENAME || defaultDeviceConfig.DEVICENAME;
         let target = ips.map(item => `http://${item}:${this.serverPort}`)
         let response = {
             name: `${appName}-${deviceName}`,
