@@ -280,6 +280,13 @@ class wifiConfigurator extends EventEmitter {
         }
         etc.save('yaml', savedConfigFileName, objToSave);
     }
+    
+    /**
+     * @returns {string}
+     */
+    getDeviceName(){
+        return deviceConfig.DEVICENAME || defaultDeviceConfig.DEVICENAME
+    }
 
     /**
      * Servers a settings page that is accessible from another device to read/edit the settings on this device
